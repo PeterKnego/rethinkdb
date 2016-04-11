@@ -3,6 +3,7 @@ package com.rethinkdb.net;
 import com.rethinkdb.gen.exc.ReqlDriverError;
 import org.json.simple.JSONObject;
 import org.json.simple.JSONValue;
+import sun.reflect.ReflectionFactory;
 
 import java.beans.BeanInfo;
 import java.beans.IntrospectionException;
@@ -10,6 +11,7 @@ import java.beans.Introspector;
 import java.beans.PropertyDescriptor;
 import java.io.ByteArrayInputStream;
 import java.io.InputStreamReader;
+import java.lang.annotation.Annotation;
 import java.lang.reflect.*;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -86,6 +88,13 @@ public class Util {
                 throw new IllegalAccessException(String.format("%s should be public", pojoClass));
             }
 
+	          // If this class has a @CustomConverter annotation then we derive the converter type form it
+	          // and let it handle the conversion
+	          Class<? extends PojoConverter> customConverterClass = hasCustomConverterAnnotation(pojoClass);
+	          if ( customConverterClass != null){
+		            return (T) createInstance(customConverterClass).toPojo(pojoClass, map);
+	          }
+
             Constructor[] allConstructors = pojoClass.getDeclaredConstructors();
 
             if (getPublicParameterlessConstructors(allConstructors).count() == 1) {
@@ -104,6 +113,62 @@ public class Util {
         } catch (InstantiationException | IllegalAccessException | IntrospectionException | InvocationTargetException e) {
             throw new ReqlDriverError("Can't convert %s to a POJO: %s", map, e.getMessage());
         }
+    }
+
+	  public static <T> T createInstance(Class<T> clazz) {
+		    try {
+			      final Constructor<T> constructor = getNoArgConstructor(clazz);
+			      if(constructor != null) {
+				        return constructor.newInstance();
+			      }
+			      try {
+				        return (T) ReflectionFactory.getReflectionFactory().
+						        newConstructorForSerialization(clazz, Object.class.getDeclaredConstructor(null)).newInstance(null);
+			      } catch (Exception e) {
+			  	      throw new RuntimeException("Failed to instantiate " + clazz.getName(), e);
+			      }
+		    } catch (Exception e) {
+		  	  throw new RuntimeException(e);
+		    }
+	  }
+
+	  public static Class<? extends PojoConverter> hasCustomConverterAnnotation(Class clazz) {
+		    Annotation[] annotations = clazz.getAnnotations();
+		    Class<? extends PojoConverter> converterClass = null;
+		    for (Annotation annotation : annotations) {
+		       	if (CustomConverter.class.isAssignableFrom(annotation.annotationType())) {
+			          if (converterClass == null) {
+				          // retrieve PojoConverter class defined in CustomConverter
+				          converterClass = ((CustomConverter) annotation).converter();
+			          } else {
+				          throw new RuntimeException("Error: multiple CustomConverter annotations used on class " + clazz +
+						          ": " + converterClass + ", " + annotation.annotationType() + ". Only one is allowed.");
+			          }
+		        }
+		    }
+		    return converterClass;
+	  }
+
+    /**
+     * Throw an RuntimeException if the class does not have a no-arg constructor.
+     *
+      * @param <T> type
+     * @param clazz class type
+     * @return found constructor
+     */
+    public static <T> Constructor<T> getNoArgConstructor(Class<T> clazz) {
+
+    	  try {
+    	  	  Constructor<T> ctor = clazz.getDeclaredConstructor();
+    	  	  ctor.setAccessible(true);
+      		  return ctor;
+      	} catch (NoSuchMethodException e) {
+      		  if (clazz.isMemberClass() || clazz.isAnonymousClass() || clazz.isLocalClass()) {
+			          throw new RuntimeException(clazz.getName() + " must be static and must have a no-arg constructor", e);
+		        } else {
+			          throw new RuntimeException(clazz.getName() + " must have a no-arg constructor", e);
+		        }
+      	}
     }
 
     private static Stream<Constructor> getPublicParameterlessConstructors(Constructor[] constructors) {
