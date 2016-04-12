@@ -1,5 +1,6 @@
 package com.rethinkdb.net;
 
+import com.rethinkdb.RethinkDB;
 import com.rethinkdb.gen.exc.ReqlDriverError;
 import org.json.simple.JSONObject;
 import org.json.simple.JSONValue;
@@ -75,7 +76,7 @@ public class Util {
      * @param <T> POJO's type
      * @param pojoClass POJO's class to be instantiated
      * @param map Map to be converted
-     * @return Instantiated POJO
+     * @return Instantiated POJ
      */
     @SuppressWarnings("unchecked")
     private static <T> T toPojo(Class<T> pojoClass, Map<String, Object> map) {
@@ -88,11 +89,11 @@ public class Util {
                 throw new IllegalAccessException(String.format("%s should be public", pojoClass));
             }
 
-	          // If this class has a @CustomConverter annotation then we derive the converter type form it
-	          // and let it handle the conversion
-	          Class<? extends PojoConverter> customConverterClass = hasCustomConverterAnnotation(pojoClass);
-	          if ( customConverterClass != null){
-		            return (T) createInstance(customConverterClass).toPojo(pojoClass, map);
+	        // Iterates registered PojoConverters and checks if any of them will take over POJO conversion
+	        for (PojoConverter pojoConverter : RethinkDB.getGlobalPojoConverters()) {
+		            if(pojoConverter.willConvert(pojoClass)){
+			            return pojoConverter.toPojo(pojoClass, map);
+		            }
 	          }
 
             Constructor[] allConstructors = pojoClass.getDeclaredConstructors();

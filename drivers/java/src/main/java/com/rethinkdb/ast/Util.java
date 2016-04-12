@@ -1,5 +1,6 @@
 package com.rethinkdb.ast;
 
+import com.rethinkdb.RethinkDB;
 import com.rethinkdb.gen.ast.*;
 import com.rethinkdb.gen.exc.ReqlDriverCompileError;
 import com.rethinkdb.gen.exc.ReqlDriverError;
@@ -137,11 +138,11 @@ public class Util {
                 throw new IllegalAccessException(String.format("%s's class should be public", pojo));
             }
 
-	        // If this class has a @CustomConverter annotation then we derive the converter type form it
-	        // and let it handle the conversion
-	          Class<? extends PojoConverter> customConverterClass = com.rethinkdb.net.Util.hasCustomConverterAnnotation(pojoClass);
-	          if (customConverterClass != null){
-		            return com.rethinkdb.net.Util.createInstance(customConverterClass).fromPojo(pojo);
+	          // Iterates registered PojoConverters and checks if any of them will take over POJO conversion
+	          for (PojoConverter pojoConverter : RethinkDB.getGlobalPojoConverters()) {
+		            if(pojoConverter.willConvert(pojoClass)){
+			              return pojoConverter.fromPojo(pojo);
+		            }
 	          }
 
             BeanInfo info = Introspector.getBeanInfo(pojoClass);

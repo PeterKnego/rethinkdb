@@ -2,9 +2,11 @@ package com.rethinkdb.net;
 
 import java.util.Map;
 
-public interface PojoConverter<T> {
+public interface PojoConverter {
 
-	T toPojo(Class<T> clazz, Map<String, Object> properties);
+	boolean willConvert(Class clazz);
 
-	Map<String, Object> fromPojo(T object);
+	<T> T toPojo (Class<T> clazz, Map<String, Object> properties);
+
+	Map<String, Object> fromPojo(Object object);
 }
